@@ -3,7 +3,6 @@ import requests
 from bs4 import BeautifulSoup
 import json
 
-# Set up clean page config
 st.set_page_config(page_title="Centennial Marketing SEO Agent", page_icon="🏆", layout="centered")
 
 st.title("Ultimate Multi-Engine SEO Agent")
@@ -37,8 +36,22 @@ def call_openrouter_model(model_name, prompt, api_key):
             "messages": [{"role": "user", "content": prompt}]
         }
         response = requests.post(url, headers=headers, json=data, timeout=15)
-        result = response.json()
-        return result['choices'][0]['message']['content']
+        
+        # Capture the raw text output to inspect errors cleanly
+        try:
+            result = response.json()
+        except:
+            return f"Raw Server Error ({response.status_code}): {response.text}"
+            
+        if 'choices' in result:
+            return result['choices'][0]['message']['content']
+        elif 'error' in result:
+            # Pull OpenRouter's explicit rejection reason
+            err_msg = result['error'].get('message', result['error'])
+            return f"OpenRouter Rejected Request: {err_msg}"
+        else:
+            return f"API Structural Error: {result}"
+            
     except Exception as e:
         return f"Error calling {model_name}: {e}"
 
@@ -57,26 +70,30 @@ with tab_settings:
     )
     st.link_button("🔗 Create Free OpenRouter Key", "https://openrouter.ai/keys")
     
-    # Store the API key safely in the web browser session memory
-    user_key = st.text_input("Paste Your OpenRouter API Key Below:", type="password", placeholder="sk-or-v1-...")
+    user_key = st.text_input("Paste Your OpenRouter API Key Here:", type="password", placeholder="sk-or-v1-...")
     if user_key:
         st.session_state["OR_KEY"] = user_key
         st.success("API Key loaded into session securely!")
 
 with tab_main:
     st.subheader("1. Paste Your Target Webpage URL:")
-    url_input = st.text_input("", placeholder="e.g., www.example.com/services", label_visibility="collapsed")
+    # Fixed accessibility label here
+    url_input = st.text_input("Target URL", placeholder="e.g., www.example.com/services", label_visibility="collapsed")
     
     if st.button("Run 4-Engine Agent Pipeline", type="primary", use_container_width=True):
-        if "OR_KEY" not in st.session_state or not st.session_state["OR_KEY"]:
-            st.error("⚠️ SETUP REQUIRED: Please go to the 'App Setup & Settings' tab and add your OpenRouter API Key first!")
+        
+        # --- HARDCODED TESTING FALLBACK ---
+        # If the text box keeps resetting, paste your sk-or-v1-... key between the quotes below:
+        TEST_KEY = "" 
+        
+        api_key = TEST_KEY if TEST_KEY else st.session_state.get("OR_KEY", "")
+        
+        if not api_key:
+            st.error("⚠️ SETUP REQUIRED: Please add your OpenRouter API Key in the Settings tab first!")
         elif not url_input:
             st.warning("Please enter a web address first.")
         else:
             with st.spinner("Executing agents..."):
-                api_key = st.session_state["OR_KEY"]
-                
-                # Progress logging updates live on screen
                 status_box = st.empty()
                 status_box.info("Scraping webpage text content...")
                 page_text = fetch_webpage_text(url_input)
@@ -92,29 +109,20 @@ with tab_main:
                     sug_grok = call_openrouter_model("x-ai/grok-2-mini:free", base_prompt, api_key)
                     sug_copilot = call_openrouter_model("microsoft/phi-4:free", base_prompt, api_key)
                     
-                    status_box.info("Running AI Judge review and generating winner consensus...")
+                    status_box.info("Running AI Judge review...")
                     judge_prompt = f"""
-                    You are an expert SEO auditor. Carefully review these four sets of suggestions generated for the same webpage:
+                    You are an expert SEO auditor. Review these options:
                     [GEMINI]: {sug_gemini}
                     [CHATGPT]: {sug_chatgpt}
                     [GROK]: {sug_grok}
                     [COPILOT]: {sug_copilot}
                     
-                    Task: Select or blend the best elements into a final winning set of tags. Output your response exactly like this:
-                    
-                    🏆 WINNING SELECTION 🏆
-                    Meta Title: [Insert Title]
-                    Meta Description: [Insert Description]
-                    Keywords: [Insert Keywords]
-                    
-                    ⚖️ JUDGMENT REASONING ⚖️
-                    [Explain why this specific selection or combination is superior for SEO ranking]
+                    Output the absolute best combined Meta Title, Description, and Keywords.
                     """
                     final_judgment = call_openrouter_model("google/gemini-2.5-flash:free", judge_prompt, api_key)
                     
-                    status_box.empty() # clear status
+                    status_box.empty()
                     
-                    # Final Compilation string
                     final_payload = f"{final_judgment}\n\n"
                     final_payload += f"===========================================\n"
                     final_payload += f"APPENDIX: INDIVIDUAL MODEL BREAKDOWNS\n"
@@ -125,5 +133,5 @@ with tab_main:
                     final_payload += f"[RAW COPILOT OUTPUT]\n{sug_copilot}\n"
                     
                     st.subheader("2. Final Winning Recommendation:")
-                    # Streamlit text area features a built-in copy button natively in the upper right corner!
-                    st.text_area("", value=final_payload, height=450, label_visibility="collapsed")
+                    # Fixed accessibility label here
+                    st.text_area("Results", value=final_payload, height=450, label_visibility="collapsed")
