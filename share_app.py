@@ -6,7 +6,7 @@ import json
 st.set_page_config(page_title="Centennial Marketing SEO Agent", page_icon="🏆", layout="centered")
 
 st.title("Ultimate Multi-Engine SEO Agent")
-st.caption("Powered by Gemini, ChatGPT, Grok, and Copilot")
+st.caption("Powered by Gemini, ChatGPT, Grok, and Copilot (Free Endpoints)")
 
 # --- CORE AGENT LOGIC ---
 def fetch_webpage_text(url):
@@ -37,7 +37,6 @@ def call_openrouter_model(model_name, prompt, api_key):
         }
         response = requests.post(url, headers=headers, json=data, timeout=15)
         
-        # Capture the raw text output to inspect errors cleanly
         try:
             result = response.json()
         except:
@@ -46,7 +45,6 @@ def call_openrouter_model(model_name, prompt, api_key):
         if 'choices' in result:
             return result['choices'][0]['message']['content']
         elif 'error' in result:
-            # Pull OpenRouter's explicit rejection reason
             err_msg = result['error'].get('message', result['error'])
             return f"OpenRouter Rejected Request: {err_msg}"
         else:
@@ -77,7 +75,6 @@ with tab_settings:
 
 with tab_main:
     st.subheader("1. Paste Your Target Webpage URL:")
-    # Fixed accessibility label here
     url_input = st.text_input("Target URL", placeholder="e.g., www.example.com/services", label_visibility="collapsed")
     
     if st.button("Run 4-Engine Agent Pipeline", type="primary", use_container_width=True):
@@ -104,22 +101,29 @@ with tab_main:
                     base_prompt = f"Analyze this text and output an optimized Meta Title, Meta Description, and Keywords for SEO:\n\n{page_text}"
                     
                     status_box.info("Querying Gemini, ChatGPT, Grok, and Copilot simultaneously...")
-                    sug_gemini = call_openrouter_model("google/gemini-2.5-flash:free", base_prompt, api_key)
-                    sug_chatgpt = call_openrouter_model("openai/gpt-4o-mini:free", base_prompt, api_key)
-                    sug_grok = call_openrouter_model("x-ai/grok-2-mini:free", base_prompt, api_key)
-                    sug_copilot = call_openrouter_model("microsoft/phi-4:free", base_prompt, api_key)
+                    sug_gemini = call_openrouter_model("google/gemini-2-flash-thinking-exp:free", base_prompt, api_key)
+                    st.write("✓ Gemini Complete")
+                    
+                    sug_chatgpt = call_openrouter_model("openai/gpt-4o-mini-privacy:free", base_prompt, api_key)
+                    st.write("✓ ChatGPT Complete")
+                    
+                    sug_grok = call_openrouter_model("x-ai/grok-2-1212:free", base_prompt, api_key)
+                    st.write("✓ Grok Complete")
+                    
+                    sug_copilot = call_openrouter_model("microsoft/phi-3-medium-128k-instruct:free", base_prompt, api_key)
+                    st.write("✓ Copilot Complete")
                     
                     status_box.info("Running AI Judge review...")
                     judge_prompt = f"""
-                    You are an expert SEO auditor. Review these options:
+                    You are an expert SEO auditor. Carefully review these options:
                     [GEMINI]: {sug_gemini}
                     [CHATGPT]: {sug_chatgpt}
                     [GROK]: {sug_grok}
                     [COPILOT]: {sug_copilot}
                     
-                    Output the absolute best combined Meta Title, Description, and Keywords.
+                    Output the absolute best combined Meta Title, Description, and Keywords based on your review.
                     """
-                    final_judgment = call_openrouter_model("google/gemini-2.5-flash:free", judge_prompt, api_key)
+                    final_judgment = call_openrouter_model("google/gemini-2-flash-thinking-exp:free", judge_prompt, api_key)
                     
                     status_box.empty()
                     
@@ -133,5 +137,4 @@ with tab_main:
                     final_payload += f"[RAW COPILOT OUTPUT]\n{sug_copilot}\n"
                     
                     st.subheader("2. Final Winning Recommendation:")
-                    # Fixed accessibility label here
                     st.text_area("Results", value=final_payload, height=450, label_visibility="collapsed")
