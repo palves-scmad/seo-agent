@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import json
+import time
 
 st.set_page_config(page_title="Centennial Marketing SEO Agent", page_icon="🏆", layout="centered")
 
@@ -14,7 +15,7 @@ def fetch_webpage_text(url):
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=8)
         soup = BeautifulSoup(response.text, 'html.parser')
         for script in soup(["script", "style"]):
             script.extract()
@@ -23,40 +24,52 @@ def fetch_webpage_text(url):
         return f"Error fetching webpage: {e}"
 
 def call_openrouter_model(prompt, api_key, generation_num):
-    try:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://localhost", 
-            "X-Title": "SEO Team Agent App"
-        }
-        
-        data = {
-            "model": "openrouter/free",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3 + (generation_num * 0.15)
-        }
-        response = requests.post(url, headers=headers, json=data, timeout=15)
-        
+    # Try up to 2 times per node if the network connection drops or delays
+    for attempt in range(2):
         try:
-            result = response.json()
-        except:
-            return f"Raw Server Error ({response.status_code}): {response.text}", "Unknown Engine"
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://localhost", 
+                "X-Title": "SEO Team Agent App"
+            }
             
-        if 'choices' in result:
-            text_output = result['choices'][0]['message']['content']
-            # OpenRouter passes the selected model ID back in the 'model' key!
-            model_used = result.get('model', 'OpenRouter Free Choice')
-            return text_output, model_used
-        elif 'error' in result:
-            err_msg = result['error'].get('message', result['error'])
-            return f"OpenRouter Rejected Request: {err_msg}", "Error Endpoint"
-        else:
-            return f"API Structural Error: {result}", "Error Endpoint"
+            data = {
+                "model": "openrouter/free",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3 + (generation_num * 0.15)
+            }
             
-    except Exception as e:
-        return f"Error calling endpoint: {e}", "Network Offline"
+            # Lowered timeout to 7 seconds so the app never freezes indefinitely
+            response = requests.post(url, headers=headers, json=data, timeout=7)
+            
+            try:
+                result = response.json()
+            except:
+                return f"Raw Server Error ({response.status_code}): {response.text}", "Unknown Engine"
+                
+            if 'choices' in result:
+                text_output = result['choices'][0]['message']['content']
+                model_used = result.get('model', 'OpenRouter Free Choice')
+                return text_output, model_used
+            elif 'error' in result:
+                err_msg = result['error'].get('message', result['error'])
+                # If hit by a temporary free rate limit, rest 2 seconds and retry once
+                if "rate limit" in err_msg.lower() and attempt == 0:
+                    time.sleep(2)
+                    continue
+                return f"OpenRouter Rejected Request: {err_msg}", "Error Endpoint"
+            else:
+                return f"API Structural Error: {result}", "Error Endpoint"
+                
+        except requests.exceptions.Timeout:
+            if attempt == 0:
+                time.sleep(1.5) # Quick pause before retrying
+                continue
+            return "Error: The OpenRouter free node timed out (took longer than 7 seconds to reply).", "Timeout Error"
+        except Exception as e:
+            return f"Error calling endpoint: {e}", "Network Offline"
 
 # --- APP TABS ---
 tab_main, tab_settings = st.tabs(["Run Multi-AI Agent", "App Setup & Settings"])
@@ -82,6 +95,9 @@ with tab_main:
     st.subheader("1. Paste Your Target Webpage URL:")
     url_input = st.text_input("Target URL", placeholder="e.g., www.example.com/services", label_visibility="collapsed")
     
+    # Placeholders for live activity logs outside the frozen execution loop
+    log_area = st.container()
+    
     if st.button("Run 4-Engine Agent Pipeline", type="primary", use_container_width=True):
         
         TEST_KEY = "" 
@@ -92,9 +108,9 @@ with tab_main:
         elif not url_input:
             st.warning("Please enter a web address first.")
         else:
-            with st.spinner("Executing agents..."):
+            with log_area:
                 status_box = st.empty()
-                status_box.info("Scraping webpage text content...")
+                status_box.info("🔍 Step 1: Scraping webpage text content...")
                 page_text = fetch_webpage_text(url_input)
                 
                 if "Error fetching" in page_text:
@@ -102,29 +118,29 @@ with tab_main:
                 else:
                     base_prompt = f"Analyze this text and output an optimized Meta Title, Meta Description, and Keywords for SEO:\n\n{page_text}"
                     
-                    status_box.info("Querying Free Agent Node 1...")
+                    status_box.info("🤖 Step 2: Querying Agent 1 via OpenRouter Free Pool...")
                     sug_1, model_1 = call_openrouter_model(base_prompt, api_key, 1)
                     st.write(f"✓ Agent 1 Complete ({model_1})")
                     
-                    status_box.info("Querying Free Agent Node 2...")
+                    status_box.info("🤖 Step 3: Querying Agent 2 via OpenRouter Free Pool...")
                     sug_2, model_2 = call_openrouter_model(base_prompt, api_key, 2)
                     st.write(f"✓ Agent 2 Complete ({model_2})")
                     
-                    status_box.info("Querying Free Agent Node 3...")
+                    status_box.info("🤖 Step 4: Querying Agent 3 via OpenRouter Free Pool...")
                     sug_3, model_3 = call_openrouter_model(base_prompt, api_key, 3)
                     st.write(f"✓ Agent 3 Complete ({model_3})")
                     
-                    status_box.info("Querying Free Agent Node 4...")
+                    status_box.info("🤖 Step 5: Querying Agent 4 via OpenRouter Free Pool...")
                     sug_4, model_4 = call_openrouter_model(base_prompt, api_key, 4)
                     st.write(f"✓ Agent 4 Complete ({model_4})")
                     
-                    status_box.info("Running AI Judge review...")
+                    status_box.info("⚖️ Step 6: Consolidating and prompting AI Judge engine...")
                     judge_prompt = f"""
-                    You are an expert SEO auditor. Carefully review these 4 generation variations for the same webpage:
-                    [VARIATION 1 via {model_1}]: {sug_1}
-                    [VARIATION 2 via {model_2}]: {sug_2}
-                    [VARIATION 3 via {model_3}]: {sug_3}
-                    [VARIATION 4 via {model_4}]: {sug_4}
+                    You are an expert SEO auditor. Carefully review these 4 variations for the same webpage:
+                    [VARIATION 1]: {sug_1}
+                    [VARIATION 2]: {sug_2}
+                    [VARIATION 3]: {sug_3}
+                    [VARIATION 4]: {sug_4}
                     
                     Task: Select or blend the best elements into a final winning set of tags. Output your response exactly like this:
                     
@@ -138,9 +154,8 @@ with tab_main:
                     """
                     final_judgment, judge_model = call_openrouter_model(judge_prompt, api_key, 0)
                     
-                    status_box.empty()
+                    status_box.success("🎉 All Agent Operations Completed Successfully!")
                     
-                    # Update layout strings to show the exact model names
                     final_payload = f"⚖️ JUDGE ENGINE USED: {judge_model}\n\n{final_judgment}\n\n"
                     final_payload += f"===========================================\n"
                     final_payload += f"APPENDIX: INDIVIDUAL AGENT BREAKDOWNS\n"
